@@ -57,11 +57,11 @@ module Dry::Validation::Matchers
 
     def description
       @desc = []
-      @desc << "validate for #{@acceptance} `#{@attr}`"
+      @desc << "validate for #{acceptance} `#{attr}`"
 
       validation_details_message = []
-      validation_details_message << "filled with #{@type}" if @check_filled
-      validation_details_message << "macro usage `#{@macro_usage_params.to_s}`" if @check_macro
+      validation_details_message << "filled with #{type}" if check_filled
+      validation_details_message << "macro usage `#{macro_usage_params.to_s}`" if check_macro
 
       unless validation_details_message.empty?
         @desc << " ("
@@ -75,11 +75,11 @@ module Dry::Validation::Matchers
 
     def failure_message
       @desc = []
-      @desc << "be missing validation for #{@acceptance} `#{@attr}`"
+      @desc << "be missing validation for #{acceptance} `#{attr}`"
 
       validation_details_message = []
-      validation_details_message << "filled with #{@type}" if @check_filled
-      validation_details_message << "macro usage `#{@macro_usage_params.to_s}`" if @check_macro
+      validation_details_message << "filled with #{type}" if check_filled
+      validation_details_message << "macro usage `#{macro_usage_params.to_s}`" if check_macro
 
       unless validation_details_message.empty?
         @desc << " ("
@@ -130,46 +130,53 @@ module Dry::Validation::Matchers
 
     private
 
+    attr_reader :attr,
+      :acceptance,
+      :type,
+      :value_rules,
+      :macro_usage_params,
+      :check_filled,
+      :check_macro
+
     def check_required_or_optional!(schema)
-      case @acceptance
+      case acceptance
       when :required
         result = schema.({})
-        error_messages = result.errors[@attr]
-        # NOTE should support required to specify but not fillup. Must wait for
-        # https://github.com/dry-rb/dry-validation/issues/251
-        error_messages.respond_to?('each') && error_messages.include?("is missing")
+        attr_errors = get_attr_errors(result)
+        attr_errors.respond_to?('each') && attr_errors.any? { |msg| msg.predicate == :key? }
       else
         result = schema.({})
-        result.errors[@attr].nil?
+        result.errors[attr].nil?
       end
     end
 
     def check_filled!(schema)
-      return true if !@check_filled
+      return true if !check_filled
 
-      result = schema.(@attr => nil)
-      if result.errors[@attr].nil? ||
-          !result.errors[@attr].include?("must be filled")
+      result = schema.(attr => nil)
+      attr_errors = get_attr_errors(result)
+      if result.errors[attr].nil? ||
+          !attr_errors.any? { |msg| msg.predicate == :filled? }
         return false
       end
       true
     end
 
     def check_filled_with_type!(schema)
-      return true if !@check_filled
-      result = schema.(@attr => TYPE_ERRORS[@type][:test_value])
-      error_messages = result.errors[@attr]
+      return true if !check_filled
+      result = schema.(attr => TYPE_ERRORS[type][:test_value])
+      error_messages = result.errors[attr]
       return true if error_messages.nil?
       # Message not allowed are all the type_error_messages that are not the
       # expected type. Any other message is accepted (like "size cannot be less than 20")
-      unallowed_errors = type_error_messages - [TYPE_ERRORS[@type][:message]]
+      unallowed_errors = type_error_messages - [TYPE_ERRORS[type][:message]]
       # We check if error_messages intersect with the unallowed_errors.
       # if intersection is empty, then the check is passed.
       (error_messages & unallowed_errors).empty?
     end
 
     def check_value!(schema)
-      @value_rules.map do |rule|
+      value_rules.map do |rule|
         method_name = :"check_value_#{rule[0]}!"
         return true if !self.class.private_method_defined?(method_name)
         send(method_name, schema, rule)
@@ -181,15 +188,15 @@ module Dry::Validation::Matchers
       allowed_values = rule[1]
 
       invalid_for_expected_values = allowed_values.map do |v|
-        result = schema.(@attr => v)
-        error_messages = result.errors[@attr]
+        result = schema.(attr => v)
+        error_messages = result.errors[attr]
         error_messages.respond_to?('each') && error_messages.grep(/must be one of/).any?
       end.any? {|result| result == true}
       return false if invalid_for_expected_values
 
       value_outside_required = allowed_values.sample.to_s + SecureRandom.hex(2)
-      result = schema.(@attr => value_outside_required)
-      error_messages = result.errors[@attr]
+      result = schema.(attr => value_outside_required)
+      error_messages = result.errors[attr]
       return false if error_messages.nil?
       return true if error_messages.grep(/must be one of/).any?
       false
@@ -201,18 +208,18 @@ module Dry::Validation::Matchers
 
       expected_error_message = "size cannot be less than #{min_size}"
 
-      result = schema.(@attr => "a" * (min_size+1))
-      error_messages = result.errors[@attr]
+      result = schema.(attr => "a" * (min_size+1))
+      error_messages = result.errors[attr]
       no_error_when_over = error_messages.nil? ||
         !error_messages.include?(expected_error_message)
 
-      result = schema.(@attr => "a" * (min_size))
-      error_messages = result.errors[@attr]
+      result = schema.(attr => "a" * (min_size))
+      error_messages = result.errors[attr]
       no_error_when_exact = error_messages.nil? ||
         !error_messages.include?(expected_error_message)
 
-      result = schema.(@attr => "a" * (min_size-1))
-      error_messages = result.errors[@attr]
+      result = schema.(attr => "a" * (min_size-1))
+      error_messages = result.errors[attr]
       error_when_below = (min_size-1).zero? ||
         !error_messages.nil? &&
         error_messages.include?(expected_error_message)
@@ -226,13 +233,13 @@ module Dry::Validation::Matchers
 
       expected_error_message = "size cannot be greater than #{max_size}"
 
-      result = schema.(@attr => "a" * (max_size+1))
-      error_messages = result.errors[@attr]
+      result = schema.(attr => "a" * (max_size+1))
+      error_messages = result.errors[attr]
       error_when_over = error_messages.respond_to?('each') &&
         error_messages.include?(expected_error_message)
 
-      result = schema.(@attr => "a" * (max_size))
-      error_messages = result.errors[@attr]
+      result = schema.(attr => "a" * (max_size))
+      error_messages = result.errors[attr]
       no_error_when_within = error_messages.nil? ||
         !error_messages.include?(expected_error_message)
 
@@ -240,20 +247,20 @@ module Dry::Validation::Matchers
     end
 
     def check_macro_usage!(schema)
-      return true if @macro_usage_params.empty?
+      return true if macro_usage_params.empty?
 
       is_present = false
 
       schema.rules.each do |obj|
-        next if obj.keys.first != @attr
+        next if obj.keys.first != attr
 
-        value = if @macro_usage_params.is_a?(Hash) && obj.macros.flatten.count > 1
+        value = if macro_usage_params.is_a?(Hash) && obj.macros.flatten.count > 1
                   obj.macros.to_h.map { |k, v| [k, v.first] }.to_h
                 else
                   obj.macros.flatten.first
                 end
 
-        if value == @macro_usage_params
+        if value == macro_usage_params
           is_present = true
           break
         end
@@ -268,6 +275,12 @@ module Dry::Validation::Matchers
         type_error_messages << hash[:message]
       end
       type_error_messages
+    end
+
+    def get_attr_errors(result)
+      result.errors.select do |msg|
+        Dry::Schema::Path[msg.path].include?(Dry::Schema::Path[attr])
+      end
     end
   end
 end
